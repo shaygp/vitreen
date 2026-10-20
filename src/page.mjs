@@ -24,7 +24,7 @@ export async function handler(event) {
   const path = event.rawPath ?? "/";
 
   if (method === "GET" && path === "/") {
-    return respond(200, renderMessage("Vitrine", "Send a photo of your chalkboard on WhatsApp and your shop is online in a minute."));
+    return respond(200, renderMessage("Vitreen", "Send a photo of your chalkboard on WhatsApp and your shop is online in a minute."));
   }
 
   const match = path.match(/^\/s\/([^/]+)(?:\/(order|qr))?\/?$/);

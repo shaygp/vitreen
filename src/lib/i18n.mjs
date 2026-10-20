@@ -5,7 +5,7 @@ export const languageFor = (waId) => (FRENCH_PREFIXES.some((p) => waId.startsWit
 const MESSAGES = {
   fr: {
     welcome:
-      "Bonjour, ici Vitrine.\nVous tenez un commerce ? Envoyez une photo de votre ardoise ou de votre carte et je crée votre page, avec la commande à emporter.\nVous êtes client ? Scannez le QR code en vitrine du commerce ou envoyez son code.",
+      "Bonjour, ici Vitreen.\nVous tenez un commerce ? Envoyez une photo de votre ardoise ou de votre carte et je crée votre page, avec la commande à emporter.\nVous êtes client ? Scannez le QR code en vitrine du commerce ou envoyez son code.",
     tooHeavy: "La photo est trop lourde. Renvoyez-la en qualité standard, s'il vous plaît.",
     created: (count, url) => `J'ai lu ${count} produits. Votre page est en ligne : ${url}`,
     createdEmpty: (url) => `Votre page est créée : ${url}\nEnvoyez maintenant une photo de votre ardoise pour ajouter vos produits.`,
@@ -46,7 +46,7 @@ const MESSAGES = {
   },
   en: {
     welcome:
-      "Hi, this is Vitrine.\nRun a shop? Send a photo of your chalkboard or menu and I'll build your page with pickup ordering.\nShopping? Scan the QR code in the shop window or send the shop's code.",
+      "Hi, this is Vitreen.\nRun a shop? Send a photo of your chalkboard or menu and I'll build your page with pickup ordering.\nShopping? Scan the QR code in the shop window or send the shop's code.",
     tooHeavy: "That photo is too large. Please send it again at standard quality.",
     created: (count, url) => `I read ${count} products. Your page is live: ${url}`,
     createdEmpty: (url) => `Your page is ready: ${url}\nNow send a photo of your chalkboard or menu to add your products.`,
@@ -107,7 +107,7 @@ export const PAGE_LABELS = {
     address: "Adresse",
     soon: "à venir",
     menuSoon: "La carte arrive bientôt.",
-    footer: "Page créée avec Vitrine sur WhatsApp",
+    footer: "Page créée avec Vitreen sur WhatsApp",
     quantity: "Quantité",
     errors: { items: "Choisissez au moins un produit", name: "Indiquez votre prénom", phone: "Indiquez un numéro de téléphone valide" },
     sent: "Commande envoyée",
@@ -133,7 +133,7 @@ export const PAGE_LABELS = {
     address: "Address",
     soon: "coming soon",
     menuSoon: "The menu is coming soon.",
-    footer: "Page made with Vitrine on WhatsApp",
+    footer: "Page made with Vitreen on WhatsApp",
     quantity: "Quantity",
     errors: { items: "Choose at least one product", name: "Add your first name", phone: "Add a valid phone number" },
     sent: "Order sent",

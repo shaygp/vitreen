@@ -93,7 +93,7 @@ export function buildOrderFromItems(shop, items) {
     const qty = Number.parseInt(requested?.qty, 10);
     if (!item || !Number.isInteger(qty) || qty < 1) continue;
     if (!item.available || item.price === null) unavailable.push(item.name);
-    else lines.push({ name: item.name, price: item.price, qty: Math.min(qty, 50) });
+    else lines.push({ id: item.id, name: item.name, price: item.price, qty: Math.min(qty, 50) });
   }
   const total = Math.round(lines.reduce((sum, l) => sum + l.price * l.qty, 0) * 100) / 100;
   return { lines, unavailable, total };
@@ -105,9 +105,17 @@ export const orderLines = (order) => order.lines.map((l) => `${l.qty} x ${l.name
 
 const SHOP_CODE = /\b([a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{4})\b/i;
 
+const DIRECTORY_CODE = /\s([a-z0-9]+(?:-[a-z0-9]+)+)\s*$/;
+
 export function extractShopCode(text) {
-  const match = typeof text === "string" ? text.match(SHOP_CODE) : null;
-  return match && isValidSlug(match[1].toLowerCase()) ? match[1].toLowerCase() : null;
+  if (typeof text !== "string") return null;
+  const match = text.match(SHOP_CODE);
+  if (match && isValidSlug(match[1].toLowerCase())) return match[1].toLowerCase();
+  const firstLine = text.split("\n")[0];
+  const directory = ` ${firstLine}`.match(DIRECTORY_CODE);
+  if (!directory || !isValidSlug(directory[1])) return null;
+  const nameSlug = firstLine.slice(0, firstLine.lastIndexOf(directory[1])).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  return nameSlug.length >= 3 && (nameSlug.includes(directory[1]) || directory[1].startsWith(nameSlug)) ? directory[1] : null;
 }
 
 export const normalizeName = (name) =>

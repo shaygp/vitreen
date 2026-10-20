@@ -61,7 +61,7 @@ const COPY = {
     insights: "Ce qu'on en retient",
     next: "Pour la semaine prochaine",
     empty: "Pas encore de commande ni de demande cette semaine. Collez le QR code en vitrine pour que vos clients vous écrivent.",
-    footer: "Envoyé par Vitrine. Répondez « stop rapport » sur WhatsApp pour ne plus le recevoir.",
+    footer: "Envoyé par Vitreen. Répondez « stop rapport » sur WhatsApp pour ne plus le recevoir.",
   },
   en: {
     subject: (name) => `${name}, what your customers told you this week`,
@@ -72,7 +72,7 @@ const COPY = {
     insights: "What stands out",
     next: "For next week",
     empty: "No orders or requests yet this week. Put the QR code in your window so customers can message you.",
-    footer: "Sent by Vitrine. Reply “stop report” on WhatsApp to stop receiving it.",
+    footer: "Sent by Vitreen. Reply “stop report” on WhatsApp to stop receiving it.",
   },
 };
 

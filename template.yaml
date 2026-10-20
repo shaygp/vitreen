@@ -1,25 +1,41 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: Vitrine, la page en ligne des commerces de proximité créée et gérée depuis WhatsApp
+Description: Vitreen, the online page of neighbourhood shops, created and run from WhatsApp
 
 Parameters:
   PhoneNumberId:
     Type: String
-    Description: Identifiant du numéro WhatsApp dans AWS End User Messaging Social (phone-number-id-...)
+    Description: WhatsApp phone number id in AWS End User Messaging Social (phone-number-id-...)
     AllowedPattern: "^phone-number-id-[a-z0-9]+$"
   BusinessPhone:
     Type: String
-    Description: Numéro WhatsApp Business au format international, chiffres seulement (pour les liens wa.me et le QR code)
+    Description: WhatsApp Business number in international format, digits only (for wa.me links and the QR code)
     AllowedPattern: "^[0-9]{8,15}$"
   SenderEmail:
     Type: String
-    Description: Adresse d'expédition vérifiée dans Amazon SES, par exemple vitrine@boxboxd.fun
+    Description: Sender address verified in Amazon SES, for example vitreen@boxboxd.fun
   SenderDomain:
     Type: String
-    Description: Domaine vérifié dans Amazon SES, par exemple boxboxd.fun
+    Description: Domain verified in Amazon SES, for example boxboxd.fun
+  SupabaseUrl:
+    Type: String
+    Description: Supabase project URL of the Vitreen site, so the WhatsApp agent also serves shops published on the site (empty to disable)
+    Default: ""
+  SupabaseAnonKey:
+    Type: String
+    Description: Supabase public anon key, used only to read published shops and call create_public_order
+    Default: ""
+  DirectoryOwnerWaId:
+    Type: String
+    Description: WhatsApp number that receives orders for shops from the site, digits only
+    Default: ""
+  SiteUrl:
+    Type: String
+    Description: Public URL of the Vitreen site
+    Default: ""
   BedrockModelId:
     Type: String
-    Description: Modèle ou profil d'inférence Bedrock capable de lire des images
+    Description: Bedrock model or inference profile able to read images
     Default: eu.anthropic.claude-sonnet-4-5-20250929-v1:0
 
 Globals:
@@ -36,6 +52,10 @@ Globals:
         MODEL_ID: !Ref BedrockModelId
         BUSINESS_PHONE: !Ref BusinessPhone
         SENDER_EMAIL: !Ref SenderEmail
+        SUPABASE_URL: !Ref SupabaseUrl
+        SUPABASE_ANON_KEY: !Ref SupabaseAnonKey
+        DIRECTORY_OWNER_WA_ID: !Ref DirectoryOwnerWaId
+        SITE_URL: !Ref SiteUrl
 
 Resources:
   Table:
@@ -165,8 +185,8 @@ Resources:
 
 Outputs:
   WhatsAppTopicArn:
-    Description: Topic SNS à choisir comme destination d'événements du numéro WhatsApp
+    Description: SNS topic to select as the event destination of the WhatsApp number
     Value: !Ref WhatsAppTopic
   PageUrl:
-    Description: Adresse publique des pages
+    Description: Public URL of the pages
     Value: !GetAtt PageFunctionUrl.FunctionUrl

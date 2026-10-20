@@ -6,7 +6,6 @@ import {
   createShop,
   downloadWhatsAppImage,
   getConversation,
-  getShop,
   getShopByOwner,
   recordDemand,
   saveConversation,
@@ -16,6 +15,7 @@ import {
   takeWaitlist,
 } from "./lib/aws.mjs";
 import { sendDigest } from "./lib/digest.mjs";
+import { findShop } from "./lib/directory.mjs";
 import { parseWhatsAppMessages } from "./lib/events.mjs";
 import { languageFor, t } from "./lib/i18n.mjs";
 import { handleOrderButton, placeOrder } from "./lib/orders.mjs";
@@ -140,7 +140,7 @@ async function handleOwnerText(message, shop, lang) {
 }
 
 async function handleCustomer(message, slug, conversation) {
-  const shop = await getShop(slug);
+  const shop = await findShop(slug);
   if (!shop) {
     await saveConversation(message.from, { slug: null, history: [] });
     return sendWhatsAppText(message.from, t(languageFor(message.from)).welcome);
