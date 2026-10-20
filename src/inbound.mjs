@@ -12,12 +12,14 @@ import {
   saveConversation,
   saveShop,
   sendWhatsAppText,
+  registerDigest,
   takeWaitlist,
 } from "./lib/aws.mjs";
+import { sendDigest } from "./lib/digest.mjs";
 import { parseWhatsAppMessages } from "./lib/events.mjs";
 import { languageFor, t } from "./lib/i18n.mjs";
 import { handleOrderButton, placeOrder } from "./lib/orders.mjs";
-import { buildOrderFromItems, clean, extractShopCode, itemsBackInStock, normalizeName, sanitizeDetails, sanitizeMenu, slugify } from "./lib/shop.mjs";
+import { buildOrderFromItems, clean, extractShopCode, isValidEmail, itemsBackInStock, normalizeName, sanitizeDetails, sanitizeMenu, slugify } from "./lib/shop.mjs";
 
 const baseUrl = () => process.env.PAGE_URL.replace(/\/$/, "");
 const pageUrl = (slug) => `${baseUrl()}/s/${slug}`;
@@ -97,6 +99,25 @@ async function handleOwnerText(message, shop, lang) {
   }
   if (/^(lien|page|link)\b/i.test(text)) return sendWhatsAppText(message.from, pageUrl(shop.slug));
   if (/^(qr|qr code)\b/i.test(text)) return sendWhatsAppText(message.from, qrUrl(shop.slug));
+
+  const emailCommand = text.match(/^(?:e-?mail|mail|courriel)\s*:?\s*(\S+)$/i);
+  if (emailCommand) {
+    const email = emailCommand[1].toLowerCase();
+    if (!isValidEmail(email)) return sendWhatsAppText(message.from, m.emailInvalid);
+    await saveShop({ ...shop, ownerEmail: email, digest: true });
+    await registerDigest(shop.slug);
+    return sendWhatsAppText(message.from, m.emailSaved(email));
+  }
+  if (/^stop\s+(rapport|report)\b/i.test(text)) {
+    await saveShop({ ...shop, digest: false });
+    return sendWhatsAppText(message.from, m.reportStopped);
+  }
+  if (/^(rapport|report|bilan)\b/i.test(text)) {
+    if (!shop.ownerEmail) return sendWhatsAppText(message.from, m.noEmail);
+    await saveShop({ ...shop, digest: true });
+    await sendDigest(shop);
+    return sendWhatsAppText(message.from, m.reportSent(shop.ownerEmail));
+  }
 
   const result = await editShop(shop, text.slice(0, 1500), lang);
   const changes = Array.isArray(result.changes) ? result.changes.filter((c) => typeof c === "string" && c.trim()).slice(0, 10) : [];

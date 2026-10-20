@@ -38,7 +38,7 @@ main{max-width:1080px;margin:0 auto;padding:96px 20px}
 .item input{width:72px;font:inherit;padding:6px 8px;border:1px solid var(--ink);background:var(--cream);border-radius:2px;color:var(--ink)}
 .order{margin-top:64px;padding:32px;border:1px solid var(--ink);background:var(--cream);border-radius:2px}
 .order h2{font-size:32px;font-weight:500;letter-spacing:-0.02em;margin-bottom:20px}
-.fields{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px}
+.fields{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:24px}
 .fields label{display:flex;flex-direction:column;gap:6px;font-size:15px}
 .fields input{font:inherit;padding:12px;border:1px solid var(--ink);background:var(--paper);border-radius:2px;color:var(--ink)}
 .trap{position:absolute;left:-9999px}
@@ -101,6 +101,7 @@ export function renderShop(shop, { photoUrl = "", whatsAppUrl = "", errors = [],
         <label>${escapeHtml(l.firstName)}<input name="name" maxlength="60" autocomplete="given-name" required value="${escapeHtml(values.name)}"></label>
         <label>${escapeHtml(l.phone)}<input name="phone" maxlength="20" type="tel" autocomplete="tel" required value="${escapeHtml(values.phone)}"></label>
         <label>${escapeHtml(l.pickup)}<input name="pickup" maxlength="40" placeholder="${escapeHtml(l.pickupHint)}" value="${escapeHtml(values.pickup)}"></label>
+        <label>${escapeHtml(l.email)}<input name="email" maxlength="254" type="email" autocomplete="email" value="${escapeHtml(values.email)}"></label>
       </div>
       <input class="trap" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
       <button type="submit">${escapeHtml(l.send)}</button>
@@ -123,6 +124,14 @@ export function renderConfirmation(shop, order) {
     `<div class="simple"><h1>${escapeHtml(l.sent)}</h1><p>${lines}</p><p>Total : ${escapeHtml(formatPrice(order.total))}</p><p>${escapeHtml(l.sentText(shop.name))}</p><p><a href="/s/${escapeHtml(shop.slug)}">${escapeHtml(l.back)}</a></p></div>`,
     shop.lang,
   );
+}
+
+export function renderReceipt(shop, order, pickupLabel) {
+  const l = labelsFor(shop);
+  const rows = order.lines.map((line) => `${line.qty} x ${line.name}  ${formatPrice(line.price * line.qty)}`);
+  const text = [l.receiptIntro(shop.name), "", ...rows, `Total : ${formatPrice(order.total)}`, order.pickup ? `${pickupLabel} : ${order.pickup}` : "", "", shop.address].filter((x) => x !== undefined).join("\n");
+  const html = `<!doctype html><html><body style="margin:0;background:#F3ECE0;color:#1E1712;font-family:Inter,Arial,sans-serif;font-size:16px;line-height:1.5"><div style="max-width:560px;margin:0 auto;padding:32px 20px"><h1 style="font-size:32px;font-weight:500;margin:0 0 16px">${escapeHtml(shop.name)}</h1><p>${escapeHtml(l.receiptIntro(shop.name))}</p>${rows.map((r) => `<p style="margin:4px 0">${escapeHtml(r)}</p>`).join("")}<p style="margin-top:12px">Total : ${escapeHtml(formatPrice(order.total))}</p>${order.pickup ? `<p>${escapeHtml(pickupLabel)} : ${escapeHtml(order.pickup)}</p>` : ""}<p>${escapeHtml(shop.address ?? "")}</p></div></body></html>`;
+  return { subject: l.receiptSubject(shop.name), html, text };
 }
 
 export function renderQrPoster(shop, qrSvg) {

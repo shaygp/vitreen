@@ -11,6 +11,12 @@ Parameters:
     Type: String
     Description: Numéro WhatsApp Business au format international, chiffres seulement (pour les liens wa.me et le QR code)
     AllowedPattern: "^[0-9]{8,15}$"
+  SenderEmail:
+    Type: String
+    Description: Adresse d'expédition vérifiée dans Amazon SES, par exemple vitrine@boxboxd.fun
+  SenderDomain:
+    Type: String
+    Description: Domaine vérifié dans Amazon SES, par exemple boxboxd.fun
   BedrockModelId:
     Type: String
     Description: Modèle ou profil d'inférence Bedrock capable de lire des images
@@ -29,6 +35,7 @@ Globals:
         PHONE_NUMBER_ID: !Ref PhoneNumberId
         MODEL_ID: !Ref BedrockModelId
         BUSINESS_PHONE: !Ref BusinessPhone
+        SENDER_EMAIL: !Ref SenderEmail
 
 Resources:
   Table:
@@ -111,6 +118,9 @@ Resources:
               Resource:
                 - !Sub "arn:${AWS::Partition}:bedrock:*::foundation-model/*"
                 - !Sub "arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:inference-profile/*"
+            - Effect: Allow
+              Action: [ses:SendEmail]
+              Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${SenderDomain}"
 
   PageFunction:
     Type: AWS::Serverless::Function
@@ -126,6 +136,32 @@ Resources:
             - Effect: Allow
               Action: [social-messaging:SendWhatsAppMessage]
               Resource: !Sub "arn:${AWS::Partition}:social-messaging:${AWS::Region}:${AWS::AccountId}:phone-number-id/${PhoneNumberId}"
+            - Effect: Allow
+              Action: [ses:SendEmail]
+              Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${SenderDomain}"
+
+  DigestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/digest.handler
+      Timeout: 300
+      Events:
+        Weekly:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: "cron(0 7 ? * MON *)"
+            ScheduleExpressionTimezone: Europe/Paris
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref Table }
+        - Statement:
+            - Effect: Allow
+              Action: [bedrock:InvokeModel]
+              Resource:
+                - !Sub "arn:${AWS::Partition}:bedrock:*::foundation-model/*"
+                - !Sub "arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:inference-profile/*"
+            - Effect: Allow
+              Action: [ses:SendEmail]
+              Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${SenderDomain}"
 
 Outputs:
   WhatsAppTopicArn:

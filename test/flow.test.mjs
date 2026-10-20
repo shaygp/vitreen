@@ -5,6 +5,8 @@ process.env.PAGE_URL = "https://pages.example/";
 
 const db = new Map();
 const sent = [];
+const demand = [];
+const emails = [];
 let modelScript = [];
 
 const awsMock = {
@@ -39,7 +41,11 @@ const awsMock = {
     for (const [k] of found) db.delete(k);
     return found.map(([, v]) => v);
   },
-  recordDemand: async () => {},
+  recordDemand: async (slug, kind, detail) => demand.push({ slug, kind, detail }),
+  registerDigest: async (slug) => db.set(`DIGEST#${slug}`, true),
+  listDemandSince: async (slug) => demand.filter((d) => d.slug === slug),
+  listOrdersSince: async () => [{ total: 9, channel: "whatsapp" }],
+  sendEmail: async (email) => emails.push(email),
   claimMessage: async (id) => {
     if (db.has(`MSG#${id}`)) return false;
     db.set(`MSG#${id}`, true);
@@ -148,4 +154,21 @@ test("the same WhatsApp message delivered twice is handled once", async () => {
   await handler(event);
   await handler(event);
   assert.equal(sent.length, 1);
+});
+
+test("the owner registers her email and gets the weekly report on demand", async () => {
+  modelScript = [];
+  await handler(message(OWNER, { type: "text", text: { body: "email not-an-email" } }));
+  assert.match(sent.at(-1).body, /pas reconnu/);
+
+  await handler(message(OWNER, { type: "text", text: { body: "email Marie@Boulangerie.fr" } }));
+  assert.match(sent.at(-1).body, /marie@boulangerie.fr/);
+
+  modelScript = [{ insights: ["Le flan pistache a été demandé alors qu'il était épuisé."], suggestion: "Prévoir plus de flans le samedi." }];
+  await handler(message(OWNER, { type: "text", text: { body: "rapport" } }));
+  assert.equal(emails.length, 1);
+  assert.equal(emails[0].to, "marie@boulangerie.fr");
+  assert.match(emails[0].text, /Flan pistache  1/);
+  assert.match(emails[0].text, /Prévoir plus de flans/);
+  assert.match(sent.at(-1).body, /Rapport envoyé/);
 });

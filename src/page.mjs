@@ -1,8 +1,9 @@
 import QRCode from "qrcode";
-import { countRecentOrders, getShop, photoUrl } from "./lib/aws.mjs";
+import { countRecentOrders, getShop, photoUrl, sendEmail } from "./lib/aws.mjs";
+import { PAGE_LABELS } from "./lib/i18n.mjs";
 import { placeOrder } from "./lib/orders.mjs";
-import { renderConfirmation, renderMessage, renderQrPoster, renderShop, SECURITY_HEADERS } from "./lib/render.mjs";
-import { buildOrder, isValidSlug } from "./lib/shop.mjs";
+import { renderConfirmation, renderMessage, renderQrPoster, renderReceipt, renderShop, SECURITY_HEADERS } from "./lib/render.mjs";
+import { buildOrder, isValidEmail, isValidSlug } from "./lib/shop.mjs";
 
 const MAX_BODY_BYTES = 8192;
 const MAX_ORDERS_PER_10_MIN = 30;
@@ -62,6 +63,13 @@ export async function handler(event) {
     } catch (error) {
       console.error(JSON.stringify({ level: "error", slug: shop.slug, name: error.name, error: error.message }));
       return respond(502, renderMessage("Commande non transmise", "Le commerce n'a pas pu être prévenu. Appelez-le pour commander."));
+    }
+    const email = (form.email ?? "").trim().toLowerCase();
+    if (email && isValidEmail(email)) {
+      const labels = PAGE_LABELS[shop.lang] ?? PAGE_LABELS.fr;
+      await sendEmail({ to: email, ...renderReceipt(shop, order, labels.pickup) }).catch((error) =>
+        console.error(JSON.stringify({ level: "warn", event: "receipt_failed", slug: shop.slug, name: error.name })),
+      );
     }
     return respond(200, renderConfirmation(shop, order));
   }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseWhatsAppMessages } from "../src/lib/events.mjs";
+import { renderDigest, summarizeWeek } from "../src/lib/digest.mjs";
 import { escapeHtml, renderShop } from "../src/lib/render.mjs";
 import { buildOrder, buildOrderFromItems, cleanPrice, extractShopCode, isValidSlug, itemsBackInStock, sanitizeMenu, slugify } from "../src/lib/shop.mjs";
 
@@ -127,4 +128,23 @@ test("parses button replies", () => {
   );
   assert.equal(m.buttonId, "acc:0123456789");
   assert.equal(m.contactName, "Léa");
+});
+
+test("weekly summary counts real orders and groups requests by product", () => {
+  const week = summarizeWeek(
+    [
+      { kind: "waitlist", detail: "Flan pistache" },
+      { kind: "waitlist", detail: "flan Pistache" },
+      { kind: "waitlist", detail: "Pain sans gluten" },
+      { kind: "question", detail: "Vous faites des gâteaux d'anniversaire ?" },
+    ],
+    [{ total: 9, channel: "whatsapp" }, { total: 4.5, channel: "web" }],
+  );
+  assert.equal(week.orders, 2);
+  assert.equal(week.revenue, 13.5);
+  assert.equal(week.viaWhatsApp, 1);
+  assert.deepEqual(week.askedFor[0], { name: "Flan pistache", count: 2 });
+  const email = renderDigest({ name: "Chez <Léa>" }, week, { insights: [], suggestion: "" }, "fr");
+  assert.ok(!email.html.includes("<Léa>"));
+  assert.match(email.text, /2 commandes à emporter/);
 });

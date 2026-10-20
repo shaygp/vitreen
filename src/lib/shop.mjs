@@ -62,6 +62,8 @@ export function slugify(name) {
   return `${base}-${randomBytes(2).toString("hex")}`;
 }
 
+export const isValidEmail = (email) => typeof email === "string" && email.length <= 254 && /^[^\s@<>()"',;:]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(email);
+
 export const isValidSlug = (slug) => typeof slug === "string" && /^[a-z0-9-]{3,48}$/.test(slug);
 
 export function buildOrder(shop, form) {

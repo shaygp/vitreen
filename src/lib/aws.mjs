@@ -12,14 +12,16 @@ import {
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { GetWhatsAppMessageMediaCommand, SendWhatsAppMessageCommand, SocialMessagingClient } from "@aws-sdk/client-socialmessaging";
+import { SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
 import { randomBytes } from "node:crypto";
 
-const { TABLE_NAME, BUCKET_NAME, PHONE_NUMBER_ID, MODEL_ID, META_API_VERSION = "v20.0" } = process.env;
+const { TABLE_NAME, BUCKET_NAME, PHONE_NUMBER_ID, MODEL_ID, SENDER_EMAIL, META_API_VERSION = "v20.0" } = process.env;
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } });
 const s3 = new S3Client({});
 const social = new SocialMessagingClient({});
 const bedrock = new BedrockRuntimeClient({});
+const ses = new SESv2Client({});
 
 const DAY = 86400;
 const epoch = () => Math.floor(Date.now() / 1000);
@@ -139,6 +141,50 @@ export async function recordDemand(slug, kind, detail) {
     new PutCommand({
       TableName: TABLE_NAME,
       Item: { pk: `DEMAND#${slug}`, sk: `${at}#${randomBytes(3).toString("hex")}`, kind, detail, at, ttl: epoch() + 90 * DAY },
+    }),
+  );
+}
+
+export async function registerDigest(slug) {
+  await db.send(new PutCommand({ TableName: TABLE_NAME, Item: { pk: "DIGEST", sk: slug, slug } }));
+}
+
+export async function listDigestSlugs() {
+  const slugs = [];
+  let ExclusiveStartKey;
+  do {
+    const page = await db.send(
+      new QueryCommand({ TableName: TABLE_NAME, KeyConditionExpression: "pk = :pk", ExpressionAttributeValues: { ":pk": "DIGEST" }, ExclusiveStartKey }),
+    );
+    slugs.push(...(page.Items ?? []).map((i) => i.slug));
+    ExclusiveStartKey = page.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+  return slugs;
+}
+
+async function queryAll(params) {
+  const items = [];
+  let ExclusiveStartKey;
+  do {
+    const page = await db.send(new QueryCommand({ TableName: TABLE_NAME, ...params, ExclusiveStartKey }));
+    items.push(...(page.Items ?? []));
+    ExclusiveStartKey = page.LastEvaluatedKey;
+  } while (ExclusiveStartKey && items.length < 2000);
+  return items;
+}
+
+export const listDemandSince = (slug, sinceIso) =>
+  queryAll({ KeyConditionExpression: "pk = :pk AND sk > :since", ExpressionAttributeValues: { ":pk": `DEMAND#${slug}`, ":since": sinceIso } });
+
+export const listOrdersSince = (slug, sinceIso) =>
+  queryAll({ KeyConditionExpression: "pk = :pk AND sk BETWEEN :from AND :to", ExpressionAttributeValues: { ":pk": `SHOP#${slug}`, ":from": `ORDER#${sinceIso}`, ":to": "ORDER#~" } });
+
+export async function sendEmail({ to, subject, html, text }) {
+  await ses.send(
+    new SendEmailCommand({
+      FromEmailAddress: SENDER_EMAIL,
+      Destination: { ToAddresses: [to] },
+      Content: { Simple: { Subject: { Data: subject, Charset: "UTF-8" }, Body: { Html: { Data: html, Charset: "UTF-8" }, Text: { Data: text, Charset: "UTF-8" } } } },
     }),
   );
 }
