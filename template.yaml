@@ -1,0 +1,136 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Vitrine, la page en ligne des commerces de proximité créée et gérée depuis WhatsApp
+
+Parameters:
+  PhoneNumberId:
+    Type: String
+    Description: Identifiant du numéro WhatsApp dans AWS End User Messaging Social (phone-number-id-...)
+    AllowedPattern: "^phone-number-id-[a-z0-9]+$"
+  BusinessPhone:
+    Type: String
+    Description: Numéro WhatsApp Business au format international, chiffres seulement (pour les liens wa.me et le QR code)
+    AllowedPattern: "^[0-9]{8,15}$"
+  BedrockModelId:
+    Type: String
+    Description: Modèle ou profil d'inférence Bedrock capable de lire des images
+    Default: eu.anthropic.claude-sonnet-4-5-20250929-v1:0
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]
+    MemorySize: 512
+    CodeUri: .
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref Table
+        BUCKET_NAME: !Ref MediaBucket
+        PHONE_NUMBER_ID: !Ref PhoneNumberId
+        MODEL_ID: !Ref BedrockModelId
+        BUSINESS_PHONE: !Ref BusinessPhone
+
+Resources:
+  Table:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      TimeToLiveSpecification: { AttributeName: ttl, Enabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      SSESpecification: { SSEEnabled: true }
+
+  MediaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      OwnershipControls:
+        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
+
+  MediaBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref MediaBucket
+      PolicyDocument:
+        Statement:
+          - Sid: TlsOnly
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: [!GetAtt MediaBucket.Arn, !Sub "${MediaBucket.Arn}/*"]
+            Condition: { Bool: { aws:SecureTransport: "false" } }
+
+  WhatsAppTopic:
+    Type: AWS::SNS::Topic
+
+  WhatsAppTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref WhatsAppTopic]
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: social-messaging.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref WhatsAppTopic
+            Condition: { StringEquals: { aws:SourceAccount: !Ref AWS::AccountId } }
+
+  InboundFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/inbound.handler
+      Timeout: 90
+      Environment:
+        Variables:
+          PAGE_URL: !GetAtt PageFunctionUrl.FunctionUrl
+      Events:
+        WhatsApp:
+          Type: SNS
+          Properties: { Topic: !Ref WhatsAppTopic }
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - S3CrudPolicy: { BucketName: !Ref MediaBucket }
+        - Statement:
+            - Effect: Allow
+              Action: [social-messaging:SendWhatsAppMessage, social-messaging:GetWhatsAppMessageMedia]
+              Resource: !Sub "arn:${AWS::Partition}:social-messaging:${AWS::Region}:${AWS::AccountId}:phone-number-id/${PhoneNumberId}"
+            - Effect: Allow
+              Action: [bedrock:InvokeModel]
+              Resource:
+                - !Sub "arn:${AWS::Partition}:bedrock:*::foundation-model/*"
+                - !Sub "arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:inference-profile/*"
+
+  PageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/page.handler
+      Timeout: 15
+      FunctionUrlConfig:
+        AuthType: NONE
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - S3ReadPolicy: { BucketName: !Ref MediaBucket }
+        - Statement:
+            - Effect: Allow
+              Action: [social-messaging:SendWhatsAppMessage]
+              Resource: !Sub "arn:${AWS::Partition}:social-messaging:${AWS::Region}:${AWS::AccountId}:phone-number-id/${PhoneNumberId}"
+
+Outputs:
+  WhatsAppTopicArn:
+    Description: Topic SNS à choisir comme destination d'événements du numéro WhatsApp
+    Value: !Ref WhatsAppTopic
+  PageUrl:
+    Description: Adresse publique des pages
+    Value: !GetAtt PageFunctionUrl.FunctionUrl
