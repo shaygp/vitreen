@@ -1,0 +1,13 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+      "Resource": [
+        "arn:aws:bedrock:eu-*::foundation-model/anthropic.*",
+        "arn:aws:bedrock:eu-north-1:635668539911:inference-profile/eu.anthropic.*"
+      ]
+    }
+  ]
+}

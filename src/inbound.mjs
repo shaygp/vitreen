@@ -12,19 +12,23 @@ import {
   saveShop,
   sendWhatsAppText,
   registerDigest,
+  saveWhatsAppMedia,
   takeWaitlist,
+  transcribeAudio,
 } from "./lib/aws.mjs";
+import { notifyCustomer, reply } from "./lib/channels.mjs";
 import { sendDigest } from "./lib/digest.mjs";
 import { findShop } from "./lib/directory.mjs";
-import { parseWhatsAppMessages } from "./lib/events.mjs";
+import { parseInboundMessages } from "./lib/events.mjs";
 import { languageFor, t } from "./lib/i18n.mjs";
-import { handleOrderButton, placeOrder } from "./lib/orders.mjs";
+import { handleOrderButton, placeOrder, resendPendingOrders } from "./lib/orders.mjs";
 import { buildOrderFromItems, clean, extractShopCode, isValidEmail, itemsBackInStock, normalizeName, sanitizeDetails, sanitizeMenu, slugify } from "./lib/shop.mjs";
 
 const baseUrl = () => process.env.PAGE_URL.replace(/\/$/, "");
 const pageUrl = (slug) => `${baseUrl()}/s/${slug}`;
 const qrUrl = (slug) => `${baseUrl()}/s/${slug}/qr`;
 const MAX_IMAGE_BYTES = 3_750_000;
+const MAX_VOICE_BYTES = 2_000_000;
 const TIME_ZONES = { fr: "Europe/Paris", en: "America/New_York" };
 
 const snapshot = ({ name, tagline, hours, address, menu, photoKey }) => ({ name, tagline, hours, address, menu, photoKey });
@@ -36,9 +40,7 @@ async function notifyWaitlist(shop, names) {
   for (const name of names.slice(0, 20)) {
     const waiting = await takeWaitlist(shop.slug, normalizeName(name));
     for (const entry of waiting) {
-      await sendWhatsAppText(entry.waId, t(entry.lang ?? shop.lang).backInStock(name, shop.name, pageUrl(shop.slug))).catch((error) =>
-        console.error(JSON.stringify({ level: "warn", event: "waitlist_send_failed", name: error.name })),
-      );
+      await notifyCustomer(entry.waId, t(entry.lang ?? shop.lang).backInStock(name, shop.name, pageUrl(shop.slug)));
     }
     if (waiting.length) notes.push(m.waitlistNotified(waiting.length, name));
   }
@@ -92,36 +94,41 @@ async function handleOwnerImage(message, shop, lang) {
 async function handleOwnerText(message, shop, lang) {
   const m = t(lang);
   const text = message.text.trim();
+  const send = (body) => sendWhatsAppText(message.from, message.heard ? `${m.heard(message.heard)}\n\n${body}` : body);
   if (/^(annuler|annule|undo)\b/i.test(text)) {
-    if (!shop.previous) return sendWhatsAppText(message.from, m.nothingToUndo);
+    if (!shop.previous) return send(m.nothingToUndo);
     await saveShop({ ...shop, ...shop.previous, previous: null });
-    return sendWhatsAppText(message.from, m.undone(pageUrl(shop.slug)));
+    return send(m.undone(pageUrl(shop.slug)));
   }
-  if (/^(lien|page|link)\b/i.test(text)) return sendWhatsAppText(message.from, pageUrl(shop.slug));
-  if (/^(qr|qr code)\b/i.test(text)) return sendWhatsAppText(message.from, qrUrl(shop.slug));
+  if (/^(lien|page|link)\b/i.test(text)) return send(pageUrl(shop.slug));
+  if (/^(qr|qr code)\b/i.test(text)) return send(qrUrl(shop.slug));
+  if (/^(commandes?|orders?)\b/i.test(text)) {
+    if (!(await resendPendingOrders(shop))) return send(m.pendingNone);
+    return;
+  }
 
   const emailCommand = text.match(/^(?:e-?mail|mail|courriel)\s*:?\s*(\S+)$/i);
   if (emailCommand) {
     const email = emailCommand[1].toLowerCase();
-    if (!isValidEmail(email)) return sendWhatsAppText(message.from, m.emailInvalid);
+    if (!isValidEmail(email)) return send(m.emailInvalid);
     await saveShop({ ...shop, ownerEmail: email, digest: true });
     await registerDigest(shop.slug);
-    return sendWhatsAppText(message.from, m.emailSaved(email));
+    return send(m.emailSaved(email));
   }
   if (/^stop\s+(rapport|report)\b/i.test(text)) {
     await saveShop({ ...shop, digest: false });
-    return sendWhatsAppText(message.from, m.reportStopped);
+    return send(m.reportStopped);
   }
   if (/^(rapport|report|bilan)\b/i.test(text)) {
-    if (!shop.ownerEmail) return sendWhatsAppText(message.from, m.noEmail);
+    if (!shop.ownerEmail) return send(m.noEmail);
     await saveShop({ ...shop, digest: true });
     await sendDigest(shop);
-    return sendWhatsAppText(message.from, m.reportSent(shop.ownerEmail));
+    return send(m.reportSent(shop.ownerEmail));
   }
 
   const result = await editShop(shop, text.slice(0, 1500), lang);
   const changes = Array.isArray(result.changes) ? result.changes.filter((c) => typeof c === "string" && c.trim()).slice(0, 10) : [];
-  if (!changes.length) return sendWhatsAppText(message.from, result.reply?.trim() || m.noChange);
+  if (!changes.length) return send(result.reply?.trim() || m.noChange);
 
   const details = sanitizeDetails(result);
   const updated = {
@@ -136,21 +143,21 @@ async function handleOwnerText(message, shop, lang) {
   await saveShop(updated);
   const notes = await notifyWaitlist(updated, itemsBackInStock(shop.menu, updated.menu));
   const summary = changes.map((c) => `- ${c}`).join("\n") + (notes.length ? `\n${notes.join("\n")}` : "");
-  return sendWhatsAppText(message.from, m.done(summary, pageUrl(shop.slug)));
+  return send(m.done(summary, pageUrl(shop.slug)));
 }
 
 async function handleCustomer(message, slug, conversation) {
   const shop = await findShop(slug);
   if (!shop) {
-    await saveConversation(message.from, { slug: null, history: [] });
-    return sendWhatsAppText(message.from, t(languageFor(message.from)).welcome);
+    await saveConversation(message.from, { slug: null, history: [], channel: message.channel, lastInboundAt: new Date().toISOString() });
+    return reply(message, t(languageFor(message.from)).welcome);
   }
   const lang = languageFor(message.from);
   const history = conversation?.slug === slug ? conversation.history ?? [] : [];
   const now = new Intl.DateTimeFormat("en-GB", { timeZone: shop.timeZone ?? "Europe/Paris", weekday: "long", hour: "2-digit", minute: "2-digit" }).format(new Date());
   const userText = message.type === "text" ? message.text.slice(0, 1500) : "(the customer sent a message that is not text)";
 
-  const { reply, history: nextHistory } = await runCustomerAgent({
+  const { reply: agentReply, history: nextHistory } = await runCustomerAgent({
     shop,
     history,
     userText,
@@ -180,22 +187,35 @@ async function handleCustomer(message, slug, conversation) {
       pass_question_to_shop: async ({ question }) => {
         const detail = clean(question, 300);
         await recordDemand(shop.slug, "question", detail);
-        await sendWhatsAppText(shop.ownerWaId, t(shop.lang).customerQuestion(message.contactName || message.from, detail));
-        return { status: "passed to the owner, who will reply on WhatsApp" };
+        await sendWhatsAppText(shop.ownerWaId, t(shop.lang).customerQuestion(message.contactName || `+${message.from}`, detail, message.channel));
+        return { status: message.channel === "rcs" ? "passed to the owner, who will reply by text message" : "passed to the owner, who will reply on WhatsApp" };
       },
     },
   });
-  await saveConversation(message.from, { slug, history: nextHistory });
-  if (reply) await sendWhatsAppText(message.from, reply);
+  await saveConversation(message.from, { slug, history: nextHistory, channel: message.channel, lastInboundAt: new Date().toISOString() });
+  if (agentReply) await reply(message, agentReply);
+}
+
+async function listen(message, lang) {
+  if (!message.audioId) return "";
+  const key = `voice/${message.from}/${message.id}`;
+  const media = await saveWhatsAppMedia(message.audioId, key);
+  if ((media.fileSize ?? 0) > MAX_VOICE_BYTES) return "";
+  return transcribeAudio({ key, mimeType: media.mimeType ?? message.mimeType, lang });
 }
 
 async function route(message) {
   const lang = languageFor(message.from);
-  if (message.buttonId) {
+  if (message.buttonId && message.channel === "whatsapp") {
     if (await handleOrderButton(message.from, message.buttonId)) return;
   }
+  const ownShop = message.channel === "whatsapp" ? await getShopByOwner(message.from) : null;
+  if (message.type === "audio") {
+    const heard = clean(await listen(message, ownShop?.lang ?? lang), 1500);
+    if (!heard) return reply(message, t(ownShop?.lang ?? lang).voice);
+    message = { ...message, type: "text", text: heard, heard };
+  }
   const code = message.type === "text" ? extractShopCode(message.text) : null;
-  const ownShop = await getShopByOwner(message.from);
   if (ownShop && (!code || code === ownShop.slug)) {
     const ownerLang = ownShop.lang ?? lang;
     if (message.type === "image" && message.imageId) return handleOwnerImage(message, ownShop, ownerLang);
@@ -206,18 +226,17 @@ async function route(message) {
   const conversation = await getConversation(message.from);
   if (conversation?.slug && message.type !== "image") return handleCustomer(message, conversation.slug, conversation);
   if (message.type === "image" && message.imageId) return handleOwnerImage(message, null, lang);
-  if (message.type === "audio") return sendWhatsAppText(message.from, t(lang).voice);
-  return sendWhatsAppText(message.from, t(lang).welcome);
+  return reply(message, message.channel === "rcs" ? t(lang).welcomeText : t(lang).welcome);
 }
 
 export async function handler(event) {
-  for (const message of parseWhatsAppMessages(event)) {
+  for (const message of parseInboundMessages(event)) {
     if (!(await claimMessage(message.id))) continue;
     try {
       await route(message);
     } catch (error) {
       console.error(JSON.stringify({ level: "error", messageId: message.id, name: error.name, error: error.message }));
-      await sendWhatsAppText(message.from, t(languageFor(message.from)).error).catch(() => {});
+      await reply(message, t(languageFor(message.from)).error).catch(() => {});
     }
   }
 }

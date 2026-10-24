@@ -64,6 +64,15 @@ export function slugify(name) {
 
 export const isValidEmail = (email) => typeof email === "string" && email.length <= 254 && /^[^\s@<>()"',;:]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(email);
 
+export function normalizePhone(value, countryCode = "33") {
+  const raw = String(value ?? "").trim();
+  const digits = raw.replace(/\D/g, "");
+  if (raw.startsWith("+")) return digits.length >= 8 && digits.length <= 15 ? digits : null;
+  if (digits.startsWith("00")) return digits.length >= 10 && digits.length <= 17 ? digits.slice(2) : null;
+  if (digits.startsWith("0") && digits.length === 10) return `${countryCode}${digits.slice(1)}`;
+  return null;
+}
+
 export const isValidSlug = (slug) => typeof slug === "string" && /^[a-z0-9-]{3,48}$/.test(slug);
 
 export function buildOrder(shop, form) {
@@ -79,9 +88,9 @@ export function buildOrder(shop, form) {
   const errors = [];
   if (lines.length === 0) errors.push("items");
   if (!customer) errors.push("name");
-  if (phone.replace(/\D/g, "").length < 8) errors.push("phone");
+  if (!normalizePhone(phone)) errors.push("phone");
   const total = Math.round(lines.reduce((sum, l) => sum + l.price * l.qty, 0) * 100) / 100;
-  return { errors, order: { lines, customer, phone, pickup, total } };
+  return { errors, order: { lines, customer, phone, customerPhone: normalizePhone(phone), pickup, total } };
 }
 
 export function buildOrderFromItems(shop, items) {

@@ -6,6 +6,7 @@ const MESSAGES = {
   fr: {
     welcome:
       "Bonjour, ici Vitreen.\nVous tenez un commerce ? Envoyez une photo de votre ardoise ou de votre carte et je crée votre page, avec la commande à emporter.\nVous êtes client ? Scannez le QR code en vitrine du commerce ou envoyez son code.",
+    welcomeText: "Bonjour, ici Vitreen. Envoyez le code du commerce affiché en vitrine pour poser une question ou commander.",
     tooHeavy: "La photo est trop lourde. Renvoyez-la en qualité standard, s'il vous plaît.",
     created: (count, url) => `J'ai lu ${count} produits. Votre page est en ligne : ${url}`,
     createdEmpty: (url) => `Votre page est créée : ${url}\nEnvoyez maintenant une photo de votre ardoise pour ajouter vos produits.`,
@@ -19,11 +20,15 @@ const MESSAGES = {
     noChange: "Je n'ai rien changé. Dites-moi ce que vous voulez modifier sur votre page.",
     done: (changes, url) => `C'est fait :\n${changes}\n\nÉcrivez "annuler" pour revenir en arrière.\n${url}`,
     waitlistNotified: (n, item) => `${n} client${n > 1 ? "s attendaient" : " attendait"} ${item}, je ${n > 1 ? "les ai prévenus" : "l'ai prévenu"}.`,
-    voice: "Les messages vocaux arrivent bientôt. Pour l'instant, écrivez-moi votre message.",
+    voice: "Je n'ai pas réussi à écouter ce message. Réessayez avec un vocal plus court ou écrivez-le-moi.",
+    heard: (text) => `J'ai entendu : « ${text} »`,
     error: "Un souci de mon côté, rien n'a changé. Réessayez dans une minute.",
     newOrder: (shopName, lines, total, customer, pickup) =>
       `Nouvelle commande pour ${shopName}\n\n${lines}\nTotal : ${total}\n\nClient : ${customer}\nRetrait : ${pickup}`,
     asap: "dès que possible",
+    newOrderByText: (shopName, total, customer) =>
+      `Vitreen : nouvelle commande pour ${shopName}, ${total}, client ${customer}. Ouvrez WhatsApp et écrivez "commandes" pour l'accepter.`,
+    pendingNone: "Aucune commande en attente.",
     accept: "Accepter",
     reject: "Refuser",
     ready: "Commande prête",
@@ -35,7 +40,8 @@ const MESSAGES = {
     ownerReady: "Le client est prévenu que sa commande est prête.",
     orderGone: "Cette commande a déjà été traitée.",
     backInStock: (item, shopName, url) => `Bonne nouvelle : ${item} est de retour chez ${shopName}. Répondez ici pour le commander.\n${url}`,
-    customerQuestion: (who, question) => `Question d'un client (${who}) :\n${question}\n\nRépondez-lui directement sur WhatsApp.`,
+    customerQuestion: (who, question, channel) =>
+      `Question d'un client (${who}) :\n${question}\n\n${channel === "rcs" ? "Répondez-lui par SMS à ce numéro." : "Répondez-lui directement sur WhatsApp."}`,
     emailSaved: (email) => `C'est noté, votre rapport de la semaine arrivera chaque lundi matin sur ${email}. Écrivez "rapport" pour le recevoir tout de suite.`,
     emailInvalid: "Je n'ai pas reconnu l'adresse. Écrivez par exemple : email marie@boulangerie.fr",
     noEmail: "Donnez-moi d'abord votre adresse, par exemple : email marie@boulangerie.fr",
@@ -47,6 +53,7 @@ const MESSAGES = {
   en: {
     welcome:
       "Hi, this is Vitreen.\nRun a shop? Send a photo of your chalkboard or menu and I'll build your page with pickup ordering.\nShopping? Scan the QR code in the shop window or send the shop's code.",
+    welcomeText: "Hi, this is Vitreen. Send the shop code shown in the window to ask a question or order.",
     tooHeavy: "That photo is too large. Please send it again at standard quality.",
     created: (count, url) => `I read ${count} products. Your page is live: ${url}`,
     createdEmpty: (url) => `Your page is ready: ${url}\nNow send a photo of your chalkboard or menu to add your products.`,
@@ -60,11 +67,15 @@ const MESSAGES = {
     noChange: "I didn't change anything. Tell me what you'd like to update on your page.",
     done: (changes, url) => `Done:\n${changes}\n\nWrite "undo" to go back.\n${url}`,
     waitlistNotified: (n, item) => `${n} customer${n > 1 ? "s were" : " was"} waiting for ${item}, I let them know.`,
-    voice: "Voice notes are coming soon. For now, please type your message.",
+    voice: "I couldn't listen to that message. Try a shorter voice note or type it.",
+    heard: (text) => `I heard: "${text}"`,
     error: "Something went wrong on my side, nothing changed. Please try again in a minute.",
     newOrder: (shopName, lines, total, customer, pickup) =>
       `New order for ${shopName}\n\n${lines}\nTotal: ${total}\n\nCustomer: ${customer}\nPickup: ${pickup}`,
     asap: "as soon as possible",
+    newOrderByText: (shopName, total, customer) =>
+      `Vitreen: new order for ${shopName}, ${total}, customer ${customer}. Open WhatsApp and write "orders" to accept it.`,
+    pendingNone: "No orders waiting.",
     accept: "Accept",
     reject: "Decline",
     ready: "Order ready",
@@ -76,7 +87,8 @@ const MESSAGES = {
     ownerReady: "The customer knows their order is ready.",
     orderGone: "This order has already been handled.",
     backInStock: (item, shopName, url) => `Good news: ${item} is back at ${shopName}. Reply here to order it.\n${url}`,
-    customerQuestion: (who, question) => `Customer question (${who}):\n${question}\n\nReply to them directly on WhatsApp.`,
+    customerQuestion: (who, question, channel) =>
+      `Customer question (${who}):\n${question}\n\n${channel === "rcs" ? "Reply to them by text message at this number." : "Reply to them directly on WhatsApp."}`,
     emailSaved: (email) => `Got it, your weekly report will arrive every Monday morning at ${email}. Write "report" to get it now.`,
     emailInvalid: "I couldn't read that address. Write for example: email marie@bakery.com",
     noEmail: "Send me your address first, for example: email marie@bakery.com",

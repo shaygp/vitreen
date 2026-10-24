@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseWhatsAppMessages } from "../src/lib/events.mjs";
+import { parseInboundMessages } from "../src/lib/events.mjs";
 import { renderDigest, summarizeWeek } from "../src/lib/digest.mjs";
 import { escapeHtml, renderShop } from "../src/lib/render.mjs";
 import { buildOrder, buildOrderFromItems, cleanPrice, extractShopCode, isValidSlug, itemsBackInStock, sanitizeMenu, slugify } from "../src/lib/shop.mjs";
@@ -22,15 +22,15 @@ test("parses text and image messages from the SNS payload", () => {
       },
     ],
   });
-  const [text, image] = parseWhatsAppMessages(event);
+  const [text, image] = parseInboundMessages(event);
   assert.equal(text.text, "plus de croissants");
   assert.equal(image.from, "33612345678");
   assert.equal(image.imageId, "m1");
 });
 
 test("ignores malformed records and status updates", () => {
-  assert.deepEqual(parseWhatsAppMessages({ Records: [{ Sns: { Message: "not json" } }] }), []);
-  assert.deepEqual(parseWhatsAppMessages(snsEvent({ changes: [{ value: { statuses: [{ id: "x" }] } }] })), []);
+  assert.deepEqual(parseInboundMessages({ Records: [{ Sns: { Message: "not json" } }] }), []);
+  assert.deepEqual(parseInboundMessages(snsEvent({ changes: [{ value: { statuses: [{ id: "x" }] } }] })), []);
 });
 
 test("cleans prices written the French way", () => {
@@ -123,7 +123,7 @@ test("detects products that come back in stock", () => {
 });
 
 test("parses button replies", () => {
-  const [m] = parseWhatsAppMessages(
+  const [m] = parseInboundMessages(
     snsEvent({ changes: [{ value: { contacts: [{ wa_id: "336", profile: { name: "Léa" } }], messages: [{ id: "w3", from: "336", type: "interactive", interactive: { type: "button_reply", button_reply: { id: "acc:0123456789", title: "Accepter" } } }] } }] }),
   );
   assert.equal(m.buttonId, "acc:0123456789");
@@ -147,4 +147,32 @@ test("weekly summary counts real orders and groups requests by product", () => {
   const email = renderDigest({ name: "Chez <Léa>" }, week, { insights: [], suggestion: "" }, "fr");
   assert.ok(!email.html.includes("<Léa>"));
   assert.match(email.text, /2 commandes à emporter/);
+});
+
+test("phone numbers from the order form become international numbers", async () => {
+  const { normalizePhone } = await import("../src/lib/shop.mjs");
+  assert.equal(normalizePhone("06 12 34 56 78"), "33612345678");
+  assert.equal(normalizePhone("+33 6 12 34 56 78"), "33612345678");
+  assert.equal(normalizePhone("0033612345678"), "33612345678");
+  assert.equal(normalizePhone("+1 555 000 0002"), "15550000002");
+  assert.equal(normalizePhone("12"), null);
+  assert.equal(normalizePhone("612345678"), null);
+});
+
+test("WhatsApp is used only inside the 24 hour window, then RCS takes over", async () => {
+  const { insideWhatsAppWindow } = await import("../src/lib/channels.mjs");
+  const now = Date.parse("2026-10-24T12:00:00Z");
+  assert.equal(insideWhatsAppWindow({ channel: "whatsapp", lastInboundAt: "2026-10-24T08:00:00Z" }, now), true);
+  assert.equal(insideWhatsAppWindow({ channel: "whatsapp", lastInboundAt: "2026-10-23T08:00:00Z" }, now), false);
+  assert.equal(insideWhatsAppWindow({ channel: "rcs", lastInboundAt: "2026-10-24T11:00:00Z" }, now), false);
+  assert.equal(insideWhatsAppWindow(null, now), false);
+});
+
+test("a voice note is parsed with its media id", () => {
+  const [m] = parseInboundMessages({
+    Records: [{ Sns: { Message: JSON.stringify({ whatsAppWebhookEntry: JSON.stringify({ changes: [{ value: { messages: [{ id: "v1", from: "33600000001", type: "audio", audio: { id: "m9", mime_type: "audio/ogg; codecs=opus" } }] } }] }) }) } }],
+  });
+  assert.equal(m.audioId, "m9");
+  assert.equal(m.mimeType, "audio/ogg; codecs=opus");
+  assert.equal(m.channel, "whatsapp");
 });

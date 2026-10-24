@@ -5,12 +5,14 @@ Description: Vitreen, the online page of neighbourhood shops, created and run fr
 Parameters:
   PhoneNumberId:
     Type: String
-    Description: WhatsApp phone number id in AWS End User Messaging Social (phone-number-id-...)
-    AllowedPattern: "^phone-number-id-[a-z0-9]+$"
+    Description: WhatsApp phone number id in AWS End User Messaging Social (phone-number-id-...), empty until the number is linked
+    Default: ""
+    AllowedPattern: "^(phone-number-id-[a-z0-9]+)?$"
   BusinessPhone:
     Type: String
-    Description: WhatsApp Business number in international format, digits only (for wa.me links and the QR code)
-    AllowedPattern: "^[0-9]{8,15}$"
+    Description: WhatsApp Business number in international format, digits only (for wa.me links and the QR code), empty until the number is linked
+    Default: ""
+    AllowedPattern: "^([0-9]{8,15})?$"
   SenderEmail:
     Type: String
     Description: Sender address verified in Amazon SES, for example vitreen@boxboxd.fun
@@ -37,6 +39,24 @@ Parameters:
     Type: String
     Description: Bedrock model or inference profile able to read images
     Default: eu.anthropic.claude-sonnet-4-5-20250929-v1:0
+  MessagingPoolId:
+    Type: String
+    Description: AWS End User Messaging pool holding the RCS agent and an SMS number (RCS with automatic SMS fallback), or the RCS agent ARN alone (empty to disable)
+    Default: ""
+    AllowedPattern: "^(pool-[a-zA-Z0-9]+|arn:aws:sms-voice:[a-z0-9-]+:[0-9]{12}:rcs-agent/rcs-[a-f0-9]+)?$"
+  BedrockRoleArn:
+    Type: String
+    Description: Role in another account of the organisation that the functions assume to call Bedrock (empty to call Bedrock in this account)
+    Default: ""
+    AllowedPattern: "^(arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+)?$"
+  OpsEmail:
+    Type: String
+    Description: Address that receives operational alarms (empty to disable)
+    Default: ""
+
+Conditions:
+  HasOpsEmail: !Not [!Equals [!Ref OpsEmail, ""]]
+  HasBedrockRole: !Not [!Equals [!Ref BedrockRoleArn, ""]]
 
 Globals:
   Function:
@@ -44,6 +64,10 @@ Globals:
     Architectures: [arm64]
     MemorySize: 512
     CodeUri: .
+    Tracing: Active
+    LoggingConfig:
+      LogFormat: JSON
+      ApplicationLogLevel: INFO
     Environment:
       Variables:
         TABLE_NAME: !Ref Table
@@ -56,6 +80,8 @@ Globals:
         SUPABASE_ANON_KEY: !Ref SupabaseAnonKey
         DIRECTORY_OWNER_WA_ID: !Ref DirectoryOwnerWaId
         SITE_URL: !Ref SiteUrl
+        MESSAGING_POOL_ID: !Ref MessagingPoolId
+        BEDROCK_ROLE_ARN: !Ref BedrockRoleArn
 
 Resources:
   Table:
@@ -114,11 +140,35 @@ Resources:
             Resource: !Ref WhatsAppTopic
             Condition: { StringEquals: { aws:SourceAccount: !Ref AWS::AccountId } }
 
+  TextInboundTopic:
+    Type: AWS::SNS::Topic
+
+  TextInboundTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref TextInboundTopic]
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: sms-voice.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref TextInboundTopic
+            Condition: { StringEquals: { aws:SourceAccount: !Ref AWS::AccountId } }
+
+  InboundDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
   InboundFunction:
     Type: AWS::Serverless::Function
     Properties:
       Handler: src/inbound.handler
-      Timeout: 90
+      Timeout: 120
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt InboundDeadLetterQueue.Arn
       Environment:
         Variables:
           PAGE_URL: !GetAtt PageFunctionUrl.FunctionUrl
@@ -126,6 +176,9 @@ Resources:
         WhatsApp:
           Type: SNS
           Properties: { Topic: !Ref WhatsAppTopic }
+        RcsAndSms:
+          Type: SNS
+          Properties: { Topic: !Ref TextInboundTopic }
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref Table }
         - S3CrudPolicy: { BucketName: !Ref MediaBucket }
@@ -141,6 +194,12 @@ Resources:
             - Effect: Allow
               Action: [ses:SendEmail]
               Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${SenderDomain}"
+            - Effect: Allow
+              Action: [sms-voice:SendTextMessage]
+              Resource: !Sub "arn:${AWS::Partition}:sms-voice:${AWS::Region}:${AWS::AccountId}:*"
+            - Effect: Allow
+              Action: [transcribe:StartTranscriptionJob, transcribe:GetTranscriptionJob]
+              Resource: !Sub "arn:${AWS::Partition}:transcribe:${AWS::Region}:${AWS::AccountId}:transcription-job/vitreen-*"
 
   PageFunction:
     Type: AWS::Serverless::Function
@@ -156,6 +215,9 @@ Resources:
             - Effect: Allow
               Action: [social-messaging:SendWhatsAppMessage]
               Resource: !Sub "arn:${AWS::Partition}:social-messaging:${AWS::Region}:${AWS::AccountId}:phone-number-id/${PhoneNumberId}"
+            - Effect: Allow
+              Action: [sms-voice:SendTextMessage]
+              Resource: !Sub "arn:${AWS::Partition}:sms-voice:${AWS::Region}:${AWS::AccountId}:*"
             - Effect: Allow
               Action: [ses:SendEmail]
               Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${SenderDomain}"
@@ -183,10 +245,78 @@ Resources:
               Action: [ses:SendEmail]
               Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${SenderDomain}"
 
+  BedrockRolePolicy:
+    Type: AWS::IAM::Policy
+    Condition: HasBedrockRole
+    Properties:
+      PolicyName: assume-bedrock-role
+      Roles: [!Ref InboundFunctionRole, !Ref DigestFunctionRole]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Resource: !Ref BedrockRoleArn
+
+  OpsTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasOpsEmail
+    Properties:
+      Subscription:
+        - { Protocol: email, Endpoint: !Ref OpsEmail }
+
+  InboundErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: The WhatsApp, RCS and SMS agent failed on at least one message
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref InboundFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasOpsEmail, [!Ref OpsTopic], !Ref AWS::NoValue]
+
+  DeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Inbound messages could not be processed after retries and wait in the dead letter queue
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions: [{ Name: QueueName, Value: !GetAtt InboundDeadLetterQueue.QueueName }]
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasOpsEmail, [!Ref OpsTopic], !Ref AWS::NoValue]
+
+  PageErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: The shop pages returned errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref PageFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasOpsEmail, [!Ref OpsTopic], !Ref AWS::NoValue]
+
 Outputs:
   WhatsAppTopicArn:
     Description: SNS topic to select as the event destination of the WhatsApp number
     Value: !Ref WhatsAppTopic
+  TextInboundTopicArn:
+    Description: SNS topic to set as the two-way destination of the RCS agent and the SMS number
+    Value: !Ref TextInboundTopic
   PageUrl:
     Description: Public URL of the pages
     Value: !GetAtt PageFunctionUrl.FunctionUrl

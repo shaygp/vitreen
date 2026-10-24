@@ -7,7 +7,11 @@ const db = new Map();
 const sent = [];
 const demand = [];
 const emails = [];
+const texts = [];
 let modelScript = [];
+let textEnabled = false;
+let transcript = "";
+const whatsAppClosedFor = new Set();
 
 const awsMock = {
   getShop: async (slug) => db.get(`SHOP#${slug}`) ?? null,
@@ -44,7 +48,7 @@ const awsMock = {
   recordDemand: async (slug, kind, detail) => demand.push({ slug, kind, detail }),
   registerDigest: async (slug) => db.set(`DIGEST#${slug}`, true),
   listDemandSince: async (slug) => demand.filter((d) => d.slug === slug),
-  listOrdersSince: async () => [{ total: 9, channel: "whatsapp" }],
+  listOrdersSince: async () => [{ id: "a1b2c3d4e5", total: 9, channel: "whatsapp" }],
   sendEmail: async (email) => emails.push(email),
   claimMessage: async (id) => {
     if (db.has(`MSG#${id}`)) return false;
@@ -52,7 +56,14 @@ const awsMock = {
     return true;
   },
   sendWhatsAppText: async (to, body) => sent.push({ to, body }),
-  sendWhatsAppButtons: async (to, body, buttons) => sent.push({ to, body, buttons }),
+  sendWhatsAppButtons: async (to, body, buttons) => {
+    if (whatsAppClosedFor.has(to)) throw Object.assign(new Error("Re-engagement message"), { name: "ValidationException" });
+    sent.push({ to, body, buttons });
+  },
+  sendTextMessage: async (to, body) => texts.push({ to, body }),
+  textChannelEnabled: () => textEnabled,
+  saveWhatsAppMedia: async () => ({ mimeType: "audio/ogg; codecs=opus", fileSize: 12000 }),
+  transcribeAudio: async () => transcript,
   downloadWhatsAppImage: async () => ({ bytes: new Uint8Array(10), mimeType: "image/jpeg" }),
   photoUrl: async () => "",
   countRecentOrders: async () => 0,
@@ -62,6 +73,7 @@ const awsMock = {
 
 mock.module("../src/lib/aws.mjs", { namedExports: awsMock });
 const { handler } = await import("../src/inbound.mjs");
+const { handler: pageHandler } = await import("../src/page.mjs");
 
 const OWNER = "33600000001";
 const CUSTOMER = "15550000002";
@@ -72,9 +84,17 @@ const message = (from, payload) => ({
 const toolCall = (name, input) => ({ stopReason: "tool_use", output: { message: { role: "assistant", content: [{ toolUse: { toolUseId: `t${counter}`, name, input } }] } } });
 const say = (text) => ({ stopReason: "end_turn", output: { message: { role: "assistant", content: [{ text }] } } });
 
+const textMessage = (from, body, extra = {}) => ({
+  Records: [{ Sns: { Message: JSON.stringify({ originationNumber: `+${from}`, destinationNumber: "rcs-agent", messageBody: body, inboundMessageId: `r${++counter}`, ...extra }) } }],
+});
+
 beforeEach(() => {
   sent.length = 0;
+  texts.length = 0;
   modelScript = [];
+  textEnabled = false;
+  transcript = "";
+  whatsAppClosedFor.clear();
 });
 
 test("a shop owner creates her page from one photo", async () => {
@@ -171,4 +191,104 @@ test("the owner registers her email and gets the weekly report on demand", async
   assert.match(emails[0].text, /Flan pistache  1/);
   assert.match(emails[0].text, /Prévoir plus de flans/);
   assert.match(sent.at(-1).body, /Rapport envoyé/);
+});
+
+test("a customer who went quiet on WhatsApp for two days is told over RCS that the order is ready", async () => {
+  textEnabled = true;
+  const conversation = db.get(`CONV#${CUSTOMER}`);
+  conversation.lastInboundAt = new Date(Date.now() - 2 * 86400000).toISOString();
+  db.get("ORDER#a1b2c3d4e5").status = "accepted";
+  await handler(message(OWNER, { type: "interactive", interactive: { type: "button_reply", button_reply: { id: "rdy:a1b2c3d4e5" } } }));
+  assert.ok(!sent.some((s) => s.to === CUSTOMER));
+  assert.equal(texts.length, 1);
+  assert.equal(texts[0].to, CUSTOMER);
+  assert.match(texts[0].body, /is ready/);
+});
+
+test("the customer answers the RCS message and the agent picks up the same conversation", async () => {
+  textEnabled = true;
+  const slug = db.get(`OWNER#${OWNER}`);
+  modelScript = [say("Yes, there are still pistachio flans today.")];
+  await handler(textMessage(CUSTOMER, "Any flan left?"));
+  assert.equal(sent.length, 0);
+  assert.match(texts.at(-1).body, /pistachio flans/);
+  const conversation = db.get(`CONV#${CUSTOMER}`);
+  assert.equal(conversation.slug, slug);
+  assert.equal(conversation.channel, "rcs");
+  assert.ok(conversation.history.some((h) => h.text === "Any flan left?"));
+});
+
+test("RCS typing notifications are not treated as messages", async () => {
+  await handler(textMessage(CUSTOMER, JSON.stringify({ type: "RCS_TYPING", receivedAt: "2026-10-24T10:00:00Z" })));
+  assert.equal(texts.length, 0);
+  assert.equal(sent.length, 0);
+});
+
+test("a web order with a French mobile number is followed up over RCS", async () => {
+  textEnabled = true;
+  const shop = db.get(`SHOP#${db.get(`OWNER#${OWNER}`)}`);
+  const croissant = shop.menu[0].items.find((i) => i.name === "Croissant");
+  const body = new URLSearchParams({ [`q_${croissant.id}`]: "3", name: "Léa", phone: "06 12 34 56 78", pickup: "8h" }).toString();
+  const response = await pageHandler({ requestContext: { http: { method: "POST" } }, headers: { "accept-language": "fr-FR,fr;q=0.9" }, rawPath: `/s/${shop.slug}/order`, body });
+  assert.equal(response.statusCode, 200);
+  assert.match(response.body, /Commande envoyée/);
+  assert.match(sent.find((s) => s.to === OWNER).body, /3 x Croissant/);
+  assert.equal(db.get("CONV#33612345678").slug, shop.slug);
+
+  await handler(message(OWNER, { type: "interactive", interactive: { type: "button_reply", button_reply: { id: "acc:a1b2c3d4e5" } } }));
+  assert.equal(texts.at(-1).to, "33612345678");
+  assert.match(texts.at(-1).body, /a accepté votre commande/);
+});
+
+test("the owner updates her page with a voice note", async () => {
+  transcript = "plus de croissants aujourd'hui";
+  const shop = db.get(`SHOP#${db.get(`OWNER#${OWNER}`)}`);
+  modelScript = [
+    {
+      changes: ["Croissant en rupture"],
+      reply: "",
+      name: shop.name,
+      tagline: shop.tagline,
+      hours: shop.hours,
+      address: shop.address,
+      categories: [{ name: "Viennoiseries", items: [{ name: "Croissant", price: 1.2, available: false }, { name: "Flan pistache", price: 4.5, available: true }] }],
+    },
+  ];
+  await handler(message(OWNER, { type: "audio", audio: { id: "voice1", mime_type: "audio/ogg; codecs=opus" } }));
+  const answer = sent.at(-1).body;
+  assert.match(answer, /J'ai entendu : « plus de croissants aujourd'hui »/);
+  assert.match(answer, /Croissant en rupture/);
+  assert.equal(db.get(`SHOP#${shop.slug}`).menu[0].items[0].available, false);
+});
+
+test("a voice note that cannot be understood gets a clear answer", async () => {
+  transcript = "";
+  await handler(message(OWNER, { type: "audio", audio: { id: "voice2", mime_type: "audio/ogg" } }));
+  assert.match(sent.at(-1).body, /pas réussi à écouter/);
+});
+
+test("an owner silent for a day gets the new order by text, then accepts it from WhatsApp", async () => {
+  textEnabled = true;
+  whatsAppClosedFor.add(OWNER);
+  const shop = db.get(`SHOP#${db.get(`OWNER#${OWNER}`)}`);
+  const flan = shop.menu[0].items.find((i) => i.name === "Flan pistache");
+  const body = new URLSearchParams({ [`q_${flan.id}`]: "1", name: "Noé", phone: "+33 7 00 00 00 01" }).toString();
+  const response = await pageHandler({ requestContext: { http: { method: "POST" } }, rawPath: `/s/${shop.slug}/order`, body });
+  assert.equal(response.statusCode, 200);
+  assert.equal(texts.at(-1).to, OWNER);
+  assert.match(texts.at(-1).body, /écrivez "commandes"/);
+
+  whatsAppClosedFor.clear();
+  await handler(message(OWNER, { type: "text", text: { body: "commandes" } }));
+  const resent = sent.find((s) => s.to === OWNER && s.buttons);
+  assert.deepEqual(resent.buttons.map((b) => b.id), ["acc:a1b2c3d4e5", "rej:a1b2c3d4e5"]);
+});
+
+test("an English speaking visitor sees the Paris shop page in English", async () => {
+  const shop = db.get(`SHOP#${db.get(`OWNER#${OWNER}`)}`);
+  const response = await pageHandler({ requestContext: { http: { method: "GET" } }, headers: { "accept-language": "en-US,en;q=0.9" }, rawPath: `/s/${shop.slug}` });
+  assert.equal(response.statusCode, 200);
+  assert.match(response.body, /<html lang="en">/);
+  assert.match(response.body, /Order for pickup/);
+  assert.match(response.body, /Croissant/);
 });

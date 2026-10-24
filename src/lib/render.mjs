@@ -143,4 +143,4 @@ export function renderQrPoster(shop, qrSvg) {
   );
 }
 
-export const renderMessage = (title, text) => page(title, `<div class="simple"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(text)}</p></div>`);
+export const renderMessage = (title, text, lang = "fr") => page(title, `<div class="simple"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(text)}</p></div>`, lang);

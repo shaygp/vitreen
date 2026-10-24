@@ -1,0 +1,11 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::704554708278:root" },
+      "Action": "sts:AssumeRole",
+      "Condition": { "ArnLike": { "aws:PrincipalArn": "arn:aws:iam::704554708278:role/vitreen-*" } }
+    }
+  ]
+}

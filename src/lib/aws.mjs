@@ -13,15 +13,22 @@ import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { GetWhatsAppMessageMediaCommand, SendWhatsAppMessageCommand, SocialMessagingClient } from "@aws-sdk/client-socialmessaging";
 import { SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
-import { randomBytes } from "node:crypto";
+import { PinpointSMSVoiceV2Client, SendTextMessageCommand } from "@aws-sdk/client-pinpoint-sms-voice-v2";
+import { GetTranscriptionJobCommand, StartTranscriptionJobCommand, TranscribeClient } from "@aws-sdk/client-transcribe";
+import { fromTemporaryCredentials } from "@aws-sdk/credential-providers";
+import { createHash, randomBytes } from "node:crypto";
 
-const { TABLE_NAME, BUCKET_NAME, PHONE_NUMBER_ID, MODEL_ID, SENDER_EMAIL, META_API_VERSION = "v20.0" } = process.env;
+const { TABLE_NAME, BUCKET_NAME, PHONE_NUMBER_ID, MODEL_ID, SENDER_EMAIL, META_API_VERSION = "v20.0", MESSAGING_POOL_ID = "", BEDROCK_ROLE_ARN = "" } = process.env;
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } });
 const s3 = new S3Client({});
 const social = new SocialMessagingClient({});
-const bedrock = new BedrockRuntimeClient({});
+const bedrock = new BedrockRuntimeClient(
+  BEDROCK_ROLE_ARN ? { credentials: fromTemporaryCredentials({ params: { RoleArn: BEDROCK_ROLE_ARN, RoleSessionName: "vitreen", DurationSeconds: 3600 } }) } : {},
+);
 const ses = new SESv2Client({});
+const textMessaging = new PinpointSMSVoiceV2Client({});
+const transcribe = new TranscribeClient({});
 
 const DAY = 86400;
 const epoch = () => Math.floor(Date.now() / 1000);
@@ -228,17 +235,64 @@ export const sendWhatsAppButtons = (to, body, buttons) =>
     },
   });
 
-export async function downloadWhatsAppImage(mediaId, key) {
-  const media = await social.send(
+export const saveWhatsAppMedia = (mediaId, key) =>
+  social.send(
     new GetWhatsAppMessageMediaCommand({
       mediaId,
       originationPhoneNumberId: PHONE_NUMBER_ID,
       destinationS3File: { bucketName: BUCKET_NAME, key },
     }),
   );
+
+export async function downloadWhatsAppImage(mediaId, key) {
+  const media = await saveWhatsAppMedia(mediaId, key);
   const object = await s3.send(new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key }));
   const bytes = await object.Body.transformToByteArray();
   return { bytes, mimeType: media.mimeType ?? object.ContentType ?? "image/jpeg" };
+}
+
+export const textChannelEnabled = () => Boolean(MESSAGING_POOL_ID);
+
+export async function sendTextMessage(to, body) {
+  await textMessaging.send(
+    new SendTextMessageCommand({
+      DestinationPhoneNumber: `+${to}`,
+      OriginationIdentity: MESSAGING_POOL_ID,
+      MessageBody: body.slice(0, 1600),
+      MessageType: "TRANSACTIONAL",
+    }),
+  );
+}
+
+const TRANSCRIBE_LANGUAGES = { fr: "fr-FR", en: "en-US" };
+const AUDIO_FORMATS = { "audio/ogg": "ogg", "audio/opus": "ogg", "audio/mpeg": "mp3", "audio/mp4": "mp4", "audio/aac": "m4a", "audio/amr": "amr", "audio/wav": "wav", "audio/webm": "webm" };
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export async function transcribeAudio({ key, mimeType, lang, timeoutMs = 60_000 }) {
+  const name = `vitreen-${createHash("sha256").update(key).digest("hex").slice(0, 32)}`;
+  const outputKey = `transcripts/${name}.json`;
+  await transcribe.send(
+    new StartTranscriptionJobCommand({
+      TranscriptionJobName: name,
+      Media: { MediaFileUri: `s3://${BUCKET_NAME}/${key}` },
+      MediaFormat: AUDIO_FORMATS[mimeType.split(";")[0].trim()] ?? "ogg",
+      LanguageCode: TRANSCRIBE_LANGUAGES[lang] ?? "en-US",
+      OutputBucketName: BUCKET_NAME,
+      OutputKey: outputKey,
+    }),
+  );
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await wait(1500);
+    const { TranscriptionJob: job } = await transcribe.send(new GetTranscriptionJobCommand({ TranscriptionJobName: name }));
+    if (job?.TranscriptionJobStatus === "FAILED") throw new Error(`transcription failed: ${job.FailureReason}`);
+    if (job?.TranscriptionJobStatus === "COMPLETED") {
+      const object = await s3.send(new GetObjectCommand({ Bucket: BUCKET_NAME, Key: outputKey }));
+      const result = JSON.parse(await object.Body.transformToString());
+      return (result.results?.transcripts ?? []).map((t) => t.transcript).join(" ").trim();
+    }
+  }
+  throw new Error("transcription timed out");
 }
 
 export const photoUrl = (key) => (key ? getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key }), { expiresIn: 3600 }) : "");
