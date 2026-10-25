@@ -7,12 +7,16 @@ import {
   downloadWhatsAppImage,
   getConversation,
   getShopByOwner,
+  inviteRcsTester,
+  rcsAgentId,
+  rcsTesterStatus,
   recordDemand,
   saveConversation,
   saveShop,
   sendWhatsAppText,
   registerDigest,
   saveWhatsAppMedia,
+  sendTextMessage,
   takeWaitlist,
   transcribeAudio,
 } from "./lib/aws.mjs";
@@ -204,8 +208,28 @@ async function listen(message, lang) {
   return transcribeAudio({ key, mimeType: media.mimeType ?? message.mimeType, lang });
 }
 
+async function handleRcsRequest(message, lang) {
+  const m = t(lang);
+  let status;
+  try {
+    status = await rcsTesterStatus(message.from);
+    if (!status) status = await inviteRcsTester(message.from);
+  } catch (error) {
+    console.error(JSON.stringify({ level: "error", step: "rcs tester", name: error.name, error: error.message }));
+    return sendWhatsAppText(message.from, m.rcsUnavailable);
+  }
+  if (status === "UNSUPPORTED") return sendWhatsAppText(message.from, m.rcsUnavailable);
+  if (status !== "VERIFIED") return sendWhatsAppText(message.from, m.rcsInvite);
+  const conversation = await getConversation(message.from);
+  const shop = conversation?.slug ? await findShop(conversation.slug) : null;
+  await sendTextMessage(message.from, m.rcsHello(shop?.name));
+  await saveConversation(message.from, { ...(conversation ?? { slug: null, history: [] }), channel: "rcs", lastInboundAt: new Date().toISOString() });
+  return sendWhatsAppText(message.from, m.rcsSent);
+}
+
 async function route(message) {
   const lang = languageFor(message.from);
+  if (message.channel === "whatsapp" && message.type === "text" && /^rcs\s*$/i.test(message.text) && rcsAgentId()) return handleRcsRequest(message, lang);
   if (message.buttonId && message.channel === "whatsapp") {
     if (await handleOrderButton(message.from, message.buttonId)) return;
   }

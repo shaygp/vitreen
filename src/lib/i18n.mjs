@@ -28,6 +28,10 @@ const MESSAGES = {
     asap: "dès que possible",
     newOrderByText: (shopName, total, customer) =>
       `Vitreen : nouvelle commande pour ${shopName}, ${total}, client ${customer}. Ouvrez WhatsApp et écrivez "commandes" pour l'accepter.`,
+    rcsInvite: 'Pour essayer Vitreen en RCS, ouvrez l\'invitation que je viens d\'envoyer sur votre téléphone de la part de "RBM Tester Management" et touchez "Make me a tester". Écrivez ensuite RCS ici.\nSur iPhone elle peut arriver dans les expéditeurs inconnus. Il faut un Android ou un iPhone sous iOS 18 avec RCS activé.',
+    rcsSent: "C'est fait, je vous ai écrit en RCS. Répondez là-bas, la conversation continue avec le même historique.",
+    rcsHello: (shopName) => (shopName ? `Bonjour, ici ${shopName}. C'est la même conversation que sur WhatsApp, maintenant en RCS. Posez votre question ou passez commande.` : "Bonjour, ici Vitreen en RCS. Envoyez le code d'un commerce pour commencer."),
+    rcsUnavailable: "Le test RCS n'est pas disponible pour ce numéro pour le moment. Tout le reste marche ici sur WhatsApp.",
     pendingNone: "Aucune commande en attente.",
     accept: "Accepter",
     reject: "Refuser",
@@ -75,6 +79,10 @@ const MESSAGES = {
     asap: "as soon as possible",
     newOrderByText: (shopName, total, customer) =>
       `Vitreen: new order for ${shopName}, ${total}, customer ${customer}. Open WhatsApp and write "orders" to accept it.`,
+    rcsInvite: 'To try Vitreen over RCS, open the invitation I just sent to your phone from "RBM Tester Management" and tap "Make me a tester". Then write RCS here again.\nOn an iPhone it can arrive in Unknown Senders. You need an Android phone or an iPhone on iOS 18 with RCS turned on.',
+    rcsSent: "Done, I just wrote to you over RCS. Reply there and the conversation carries on with the same history.",
+    rcsHello: (shopName) => (shopName ? `Hello from ${shopName}. This is the same conversation as on WhatsApp, now over RCS. Ask anything or place an order.` : "Hello from Vitreen over RCS. Send the code of a shop to start."),
+    rcsUnavailable: "RCS testing isn't available for this number right now. Everything else works here on WhatsApp.",
     pendingNone: "No orders waiting.",
     accept: "Accept",
     reject: "Decline",

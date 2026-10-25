@@ -185,7 +185,7 @@ Resources:
         - Statement:
             - Effect: Allow
               Action: [social-messaging:SendWhatsAppMessage, social-messaging:GetWhatsAppMessageMedia]
-              Resource: !Sub "arn:${AWS::Partition}:social-messaging:${AWS::Region}:${AWS::AccountId}:phone-number-id/${PhoneNumberId}"
+              Resource: !Sub "arn:${AWS::Partition}:social-messaging:${AWS::Region}:${AWS::AccountId}:phone-number-id/*"
             - Effect: Allow
               Action: [bedrock:InvokeModel]
               Resource:
@@ -195,7 +195,7 @@ Resources:
               Action: [ses:SendEmail]
               Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${SenderDomain}"
             - Effect: Allow
-              Action: [sms-voice:SendTextMessage]
+              Action: [sms-voice:SendTextMessage, sms-voice:CreateVerifiedDestinationNumber, sms-voice:DescribeVerifiedDestinationNumbers]
               Resource: !Sub "arn:${AWS::Partition}:sms-voice:${AWS::Region}:${AWS::AccountId}:*"
             - Effect: Allow
               Action: [transcribe:StartTranscriptionJob, transcribe:GetTranscriptionJob]
@@ -214,7 +214,7 @@ Resources:
         - Statement:
             - Effect: Allow
               Action: [social-messaging:SendWhatsAppMessage]
-              Resource: !Sub "arn:${AWS::Partition}:social-messaging:${AWS::Region}:${AWS::AccountId}:phone-number-id/${PhoneNumberId}"
+              Resource: !Sub "arn:${AWS::Partition}:social-messaging:${AWS::Region}:${AWS::AccountId}:phone-number-id/*"
             - Effect: Allow
               Action: [sms-voice:SendTextMessage]
               Resource: !Sub "arn:${AWS::Partition}:sms-voice:${AWS::Region}:${AWS::AccountId}:*"

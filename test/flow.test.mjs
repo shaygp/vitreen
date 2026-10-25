@@ -12,6 +12,8 @@ let modelScript = [];
 let textEnabled = false;
 let transcript = "";
 const whatsAppClosedFor = new Set();
+const testers = new Map();
+let rcsAgent = "";
 
 const awsMock = {
   getShop: async (slug) => db.get(`SHOP#${slug}`) ?? null,
@@ -62,6 +64,12 @@ const awsMock = {
   },
   sendTextMessage: async (to, body) => texts.push({ to, body }),
   textChannelEnabled: () => textEnabled,
+  rcsAgentId: () => rcsAgent,
+  rcsTesterStatus: async (phone) => testers.get(phone) ?? null,
+  inviteRcsTester: async (phone) => {
+    testers.set(phone, "PENDING");
+    return "PENDING";
+  },
   saveWhatsAppMedia: async () => ({ mimeType: "audio/ogg; codecs=opus", fileSize: 12000 }),
   transcribeAudio: async () => transcript,
   downloadWhatsAppImage: async () => ({ bytes: new Uint8Array(10), mimeType: "image/jpeg" }),
@@ -95,6 +103,7 @@ beforeEach(() => {
   textEnabled = false;
   transcript = "";
   whatsAppClosedFor.clear();
+  rcsAgent = "";
 });
 
 test("a shop owner creates her page from one photo", async () => {
@@ -291,4 +300,31 @@ test("an English speaking visitor sees the Paris shop page in English", async ()
   assert.match(response.body, /<html lang="en">/);
   assert.match(response.body, /Order for pickup/);
   assert.match(response.body, /Croissant/);
+});
+
+test("a judge writes RCS on WhatsApp, accepts the tester invitation and the conversation moves to RCS", async () => {
+  rcsAgent = "rcs-abc123";
+  textEnabled = true;
+  const judge = "15550000077";
+  const slug = db.get(`OWNER#${OWNER}`);
+  modelScript = [say("Hi! What can I get you?")];
+  await handler(message(judge, { type: "text", text: { body: `Boulangerie Martin ${slug}` } }));
+  await handler(message(judge, { type: "text", text: { body: "RCS" } }));
+  assert.equal(testers.get(judge), "PENDING");
+  assert.match(sent.at(-1).body, /Make me a tester/);
+  assert.equal(texts.length, 0);
+  testers.set(judge, "VERIFIED");
+  await handler(message(judge, { type: "text", text: { body: "rcs" } }));
+  assert.equal(texts.at(-1).to, judge);
+  assert.match(texts.at(-1).body, /Boulangerie Martin/);
+  assert.match(sent.at(-1).body, /over RCS/);
+  modelScript = [say("Yes, we have croissants today.")];
+  await handler(textMessage(judge, "Any croissants left?"));
+  assert.match(texts.at(-1).body, /croissants today/);
+});
+
+test("the RCS command is ignored when no RCS agent is configured", async () => {
+  const stranger = "15550000088";
+  await handler(message(stranger, { type: "text", text: { body: "RCS" } }));
+  assert.equal(testers.has(stranger), false);
 });

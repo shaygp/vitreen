@@ -13,7 +13,7 @@ import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { GetWhatsAppMessageMediaCommand, SendWhatsAppMessageCommand, SocialMessagingClient } from "@aws-sdk/client-socialmessaging";
 import { SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
-import { PinpointSMSVoiceV2Client, SendTextMessageCommand } from "@aws-sdk/client-pinpoint-sms-voice-v2";
+import { CreateVerifiedDestinationNumberCommand, DescribeVerifiedDestinationNumbersCommand, PinpointSMSVoiceV2Client, SendTextMessageCommand } from "@aws-sdk/client-pinpoint-sms-voice-v2";
 import { GetTranscriptionJobCommand, StartTranscriptionJobCommand, TranscribeClient } from "@aws-sdk/client-transcribe";
 import { fromTemporaryCredentials } from "@aws-sdk/credential-providers";
 import { createHash, randomBytes } from "node:crypto";
@@ -212,11 +212,12 @@ export async function claimMessage(messageId) {
   }
 }
 
-async function sendWhatsApp(payload) {
+async function sendWhatsApp({ to, ...payload }) {
+  const recipient = `+${String(to).replace(/\D/g, "")}`;
   await social.send(
     new SendWhatsAppMessageCommand({
       originationPhoneNumberId: PHONE_NUMBER_ID,
-      message: new TextEncoder().encode(JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", ...payload })),
+      message: new TextEncoder().encode(JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: recipient, ...payload })),
       metaApiVersion: META_API_VERSION,
     }),
   );
@@ -262,6 +263,18 @@ export async function sendTextMessage(to, body) {
       MessageType: "TRANSACTIONAL",
     }),
   );
+}
+
+export const rcsAgentId = () => (MESSAGING_POOL_ID.match(/:rcs-agent\/(rcs-[a-f0-9]+)$/) ?? [])[1] ?? "";
+
+export async function rcsTesterStatus(phone) {
+  const result = await textMessaging.send(new DescribeVerifiedDestinationNumbersCommand({ DestinationPhoneNumbers: [`+${phone}`] }));
+  return result.VerifiedDestinationNumbers?.[0]?.Status ?? null;
+}
+
+export async function inviteRcsTester(phone) {
+  const result = await textMessaging.send(new CreateVerifiedDestinationNumberCommand({ DestinationPhoneNumber: `+${phone}`, RcsAgentId: rcsAgentId() }));
+  return result.Status;
 }
 
 const TRANSCRIBE_LANGUAGES = { fr: "fr-FR", en: "en-US" };

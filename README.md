@@ -6,10 +6,10 @@ It was created for the AWS CDS Agentic AI Partner Hackathon in October 2026 by b
 
 ## How can I try it as a judge?
 
-- **WhatsApp:** message `WHATSAPP_NUMBER` with `Boulangerie Martin boulangerie-martin-a1b2` and ask anything in any language, for example "Do you still have pistachio flan?" followed by "Yes, tell me when it is back".
+- **WhatsApp:** message +1 711 531 8100 (https://wa.me/17115318100) with `Boulangerie Martin boulangerie-martin-a1b2` and ask anything in any language, for example "Do you still have pistachio flan?" followed by "Yes, tell me when it is back".
 - **Web page of the demo shop:** https://dtaxovn7ivekfasgtxirj42sam0xcrdc.lambda-url.eu-north-1.on.aws/s/boulangerie-martin-a1b2 is the page the agent created from the menu, shown in your browser language and taking real pickup orders.
-- **RCS:** our RCS agent is still at the testing stage and only reaches registered test devices, so send your number to partnerships@boxboxd.fun and we will add you as a tester within minutes.
-- **Demo video:** `VIDEO_URL`
+- **RCS:** write `RCS` in the same WhatsApp conversation. Vitreen registers your number as a tester of our RCS agent, you tap "Make me a tester" in the invitation from RBM Tester Management, then write `RCS` again and the conversation carries on over RCS with the same history. This needs an Android phone or an iPhone on iOS 18 with RCS turned on, and on an iPhone the invitation can arrive in Unknown Senders.
+- **Demo video:** https://youtu.be/YpPHzQSEZX8
 
 There is nothing to install and nothing to pay and the whole stack runs in eu-north-1.
 
@@ -133,7 +133,7 @@ aws pinpoint-sms-voice-v2 update-rcs-agent --rcs-agent-id <id> \
 
 ## How is it tested?
 
-`npm test` runs 37 tests with the Node.js test runner and mocked AWS clients, following the owner and the customer from start to finish: a page created from a single photo, a waitlist alert when the flan comes back, an order accepted and then marked ready, a stranger trying to accept someone else's order, duplicate webhooks, a customer silent for two days who is reached over RCS, an RCS reply that continues the same conversation, a web order followed up over RCS, an owner silent for a day, a menu changed by voice note, RCS typing events that are ignored and the English page served to an English browser.
+`npm test` runs 39 tests with the Node.js test runner and mocked AWS clients, following the owner and the customer from start to finish: a page created from a single photo, a waitlist alert when the flan comes back, an order accepted and then marked ready, a stranger trying to accept someone else's order, duplicate webhooks, a customer silent for two days who is reached over RCS, an RCS reply that continues the same conversation, a web order followed up over RCS, an owner silent for a day, a menu changed by voice note, RCS typing events that are ignored, the English page served to an English browser and a judge moving from WhatsApp to RCS with the `RCS` command.
 
 ## How does a partner sell it?
 
