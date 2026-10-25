@@ -133,11 +133,29 @@ aws pinpoint-sms-voice-v2 update-rcs-agent --rcs-agent-id <id> \
 
 ## How is it tested?
 
-`npm test` runs 39 tests with the Node.js test runner and mocked AWS clients, following the owner and the customer from start to finish: a page created from a single photo, a waitlist alert when the flan comes back, an order accepted and then marked ready, a stranger trying to accept someone else's order, duplicate webhooks, a customer silent for two days who is reached over RCS, an RCS reply that continues the same conversation, a web order followed up over RCS, an owner silent for a day, a menu changed by voice note, RCS typing events that are ignored, the English page served to an English browser and a judge moving from WhatsApp to RCS with the `RCS` command.
+`npm test` runs 39 tests with the Node.js test runner and mocked AWS clients, following the owner and the customer from start to finish:
+
+- a page created from a single photo
+- a waitlist alert when the flan comes back
+- an order accepted and then marked ready
+- a stranger trying to accept someone else's order
+- duplicate webhooks
+- a customer silent for two days who is reached over RCS
+- an RCS reply that continues the same conversation
+- a web order followed up over RCS
+- an owner silent for a day
+- a menu changed by voice note
+- RCS typing events that are ignored
+- the English page served to an English browser
+- a judge moving from WhatsApp to RCS with the `RCS` command
 
 ## How does a partner sell it?
 
-Vitreen is shaped as a repeatable offer for AWS Partners who work with small merchants, such as chambers of commerce, bakery and butcher networks, payment providers or local agencies. One stack serves every shop in a network and onboarding a new shop costs nothing because the owner only sends a photo, while the weekly report gives the network something it never had before: a shop by shop view of what customers asked for and could not get.
+Vitreen is shaped as a repeatable offer for AWS Partners who work with small merchants, such as chambers of commerce, bakery and butcher networks, payment providers or local agencies.
+
+One stack serves every shop in a network, and onboarding a new shop costs nothing because the owner only sends a photo.
+
+The weekly report gives the network something it never had before: a shop by shop view of what customers asked for and could not get.
 
 ## What comes next?
 
@@ -148,9 +166,19 @@ Vitreen is shaped as a repeatable offer for AWS Partners who work with small mer
 
 ## A word for the jury
 
-The panel has fifteen members and most of them work on the very services Vitreen depends on: Marie Carlton, Sara Caleffi, Tom Sly, Morgan Pomerantz, Yaniv Bossem, Kathleen Winder, Jimmy Nimo, Robert Gray, Raman Dhillon, Medha Karri, Matt Burdick, Alexis Perry, Zip Zieper, Puneet Badlani and Sandeep Akhouri.
+Fifteen people will look at this project, and most of them work on the very services it runs on: Marie Carlton, Sara Caleffi, Tom Sly, Morgan Pomerantz, Yaniv Bossem, Kathleen Winder, Jimmy Nimo, Robert Gray, Raman Dhillon, Medha Karri, Matt Burdick, Alexis Perry, Zip Zieper, Puneet Badlani and Sandeep Akhouri
 
-That matters to us more than the prize itself. RCS in End User Messaging opened to businesses this year, the SMS fallback inside a pool is what lets an independent baker reach every customer without ever hearing the word RCS and the two way SNS topic is what allows a single Lambda function to hold one conversation across WhatsApp and RCS. Those services come from the product, engineering and go to market teams represented on this panel and Vitreen is a small test of what they make possible for a shop with no IT at all. Your feedback is the closest thing we will get to a review from the people who know where these services are heading and we would be grateful to hear what you would change.
+Honestly that means more to us than the prize
+
+Vitreen only exists because of what your teams put out there
+
+RCS opened to businesses in End User Messaging this year, and the SMS fallback is what lets a baker reach every one of her customers without ever having to hear the word RCS
+
+The two way SNS topic is the quiet piece that lets one small Lambda function keep a single conversation going on WhatsApp and RCS
+
+We think of Vitreen as a small test of what those services can do for a shop with no IT at all, just an owner with flour on her hands and a phone on the counter
+
+So if you try it and something feels off, or you see a better way to use what you created, we would really love to hear it :)
 
 ## License
 
